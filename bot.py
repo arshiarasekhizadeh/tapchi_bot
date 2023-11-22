@@ -16,6 +16,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, Conversation
 load_dotenv()
 
 API_HASH , API_ID , PHONE_NUMBER , USER_NAME , PASSWORLD , VERFIVATION_CODE  = range(6)
+DELETE_ACCOUNT = 7
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -30,7 +31,8 @@ add_account_data = []
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global keyboard
     keyboard = [[InlineKeyboardButton('اضافه کردن شماره' , callback_data='add_account') ,
-                 InlineKeyboardButton('دیدن شماره ها' , callback_data='see_accounts')]]
+                 InlineKeyboardButton('دیدن شماره ها' , callback_data='see_accounts')],
+                 [InlineKeyboardButton('حذف کردن شماره' , callback_data='delete_account')]]
     global reply_markup
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text('چه کاری می خواید انجام بدید : ', reply_markup=reply_markup)
@@ -118,7 +120,34 @@ async def finsh_add_account(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     add_account_data.clear()
     return ConversationHandler.END
 
+async def show_accounts(query):
+    with open('acoounts.json' , 'r') as account_file :
+        accounts = json.load(account_file)
+    account_keybord = []
+    for k, v in accounts.items():
+        account_keybord.append([InlineKeyboardButton(text=k , callback_data=v)])
+        account_reply_markup = InlineKeyboardMarkup(account_keybord)
+        await query.message.reply_text('اکانت های شما :‌ ' , reply_markup=account_reply_markup)
 
+async def delete_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    global cancel_keybord
+    cancel_keybord = [[InlineKeyboardButton('کنسل' , callback_data='cancel')]]
+    global cancel_reply_markup
+    cancel_reply_markup = InlineKeyboardMarkup(cancel_keybord)
+    await update.message.reply_text('لطفا شماره موبایل را با کد کشور وارد کنید' , reply_markup=cancel_reply_markup)
+    return DELETE_ACCOUNT
+
+async def delete_phonenumber_from_json (update: Update, context: ContextTypes.DEFAULT_TYPE):
+    back_keybord = [[InlineKeyboardButton('بازگشت' , callback_data='back')]]
+    back_reply_markup = InlineKeyboardMarkup(back_keybord)
+    phone_number = update.message.text
+    with open('acoounts.json' , 'r') as account_file :
+        accounts = json.load(account_file)
+    accounts.pop(phone_number)
+    with open('acoounts.json' , 'w') as account_file_after_pop :
+        json.dump(accounts, account_file_after_pop)
+    await update.message.reply_text("اکانت با موفقیت حذف شد", reply_markup=back_reply_markup)
+    return ConversationHandler.END
 
 async def main_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -132,13 +161,9 @@ async def main_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if os.path.getsize('acoounts.json') <= 3 :
                 await query.message.reply_text('شما هیچ اکانتی ثپت نکردید' , reply_markup=back_reply_markup)
             else :
-                with open('acoounts.json' , 'r') as account_file :
-                    accounts = json.load(account_file)
-                account_keybord = []
-                for k, v in accounts.items():
-                    account_keybord.append([InlineKeyboardButton(text=k , callback_data=v)])
-                account_reply_markup = InlineKeyboardMarkup(account_keybord)
-                await query.message.reply_text('اکانت های شما :‌ ' , reply_markup=account_reply_markup)
+                show_accounts(query)
+        case "delete_account":
+            await query.message.reply_text('برای حذف کردن شماره دستور /delete_account را وارد کنید')
         case "back" :
             await query.message.edit_text('چه کاری می خواید انجام بدید : ' , reply_markup=reply_markup)
         case 'cancel' : 
@@ -153,6 +178,13 @@ def main() -> None:
     application = Application.builder().token(os.getenv('BOT_TOKEN')).build()
 
     start_handler = CommandHandler('start' , start)
+    delete_account_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('delete_account' , delete_account)] ,
+        states={
+            DELETE_ACCOUNT: [MessageHandler(filters.TEXT & ~ filters.COMMAND , delete_phonenumber_from_json)]
+        },
+        fallbacks=[] , allow_reentry=True
+        )
     add_account_conv_handler = ConversationHandler(
         entry_points=[CommandHandler('add_account' , add_account)] ,
         states={
@@ -170,6 +202,7 @@ def main() -> None:
     
     application.add_handler(start_handler)
     application.add_handler(add_account_conv_handler)
+    application.add_handler(delete_account_conv_handler)
     application.add_handler(CallbackQueryHandler(main_menu_button))
     application.run_polling(allowed_updates=Update.ALL_TYPES)
     
