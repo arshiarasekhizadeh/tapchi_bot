@@ -286,6 +286,8 @@ async def main_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         InlineKeyboardButton('غیرفعال کردن اکانت' , callback_data='diactive_account')],
                         [InlineKeyboardButton('بازگشت به منوی اصلی' , callback_data='back')]]
     account_keybord_markup = InlineKeyboardMarkup(account_keybord)
+    back_account_keybord = [[InlineKeyboardButton('بازگشت به منوی اکانت' , callback_data='back_menu')]]
+    back_account_keybord_markup = InlineKeyboardMarkup(back_account_keybord)
     with open('acoounts.json' , 'r') as account_file :
         accounts = json.load(account_file)
     phones = list(accounts)
@@ -315,11 +317,18 @@ async def main_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'see_account_detail' :
         account_data = accounts[selected_phone]
         if len(account_data) == 1 :
-            await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده :‌ فرمتی ست نشده')
+            await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده :‌ فرمتی ست نشده', reply_markup=back_account_keybord_markup)
         elif len(account_data) == 3 :
-            await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده : {account_data[1]}\nپیام ست شده برای فرمت: {account_data[2]}')
+            await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده : {account_data[1]}\nپیام ست شده برای فرمت: {account_data[2]}', reply_markup=back_account_keybord_markup)
         elif len(account_data) == 4 :
-            await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده : {account_data[1]}\nساعت فرستادن پیام: {account_data[2]}\nپیام ست شده برای فرمت :{account_data[3]}')
+            await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده : {account_data[1]}\nساعت فرستادن پیام: {account_data[2]}\nپیام ست شده برای فرمت :{account_data[3]}', reply_markup=back_account_keybord_markup)
+    elif data == 'active_account' :
+        loop = asyncio.get_event_loop()
+        client_1 = TelegramClient(f'session_files/{accounts[selected_phone][0]}')
+        client_1.connect()
+        for dialog in client.get_dialogs():
+            if dialog.is_group == True:
+                print(dialog.entity.id)
 
 def main() -> None:
     application = Application.builder().token(os.getenv('BOT_TOKEN')).build()
