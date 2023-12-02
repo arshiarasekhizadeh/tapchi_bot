@@ -1,12 +1,10 @@
-import re
 import os
 import json
-import uuid
-import random
 import asyncio
 import logging
-import datetime
+from pytz import timezone
 from telegram import Update
+from datetime import datetime
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
 from telethon.errors import SessionPasswordNeededError
@@ -29,6 +27,40 @@ logger = logging.getLogger(__name__)
 
 
 add_account_data = []
+groups_id = {}
+async def send_message_to_group(phone) :
+    x = phone
+    with open('acoounts.json' , 'r') as account_file :
+        accounts = json.load(account_file)
+    x = TelegramClient(f'session_files/{accounts[phone][0]}' , accounts[phone][2] , accounts[phone][1])
+    await x.connect()
+    while True :
+        for dialog in await x.get_dialogs():
+            if dialog.is_group == True:
+                if dialog.entity.id not in groups_id[phone] :
+                    groups_id[phone] += [dialog.entity.id]
+        if len(accounts[phone]) > 5 :
+            time = accounts[phone][4]
+        message = accounts[phone][-1]
+        if accounts[phone][3] == 'every_n_houer' :
+            for id in groups_id :
+                await x.send_message(int(id) , message)
+                await asyncio.sleep(int(time*3600))
+        elif accounts[phone][3] ==  'every_n_houer' :
+            format = "%H"
+            now_tehran = datetime.now(timezone('Asia/Tehran'))
+            time_now = now_tehran.strftime(format)
+            times = time.split("-")
+            for id in groups_id :
+                if time_now in times :
+                    await x.send_message(int(id) , message)
+        elif accounts[phone][3] == 'last_message_in_group' :
+            for id in groups_id :
+                last_message = await x.get_messages(int(id) , limit=1)
+                last_message = list(last_message)
+                if last_message[0].message != message :
+                    await x.send_message(int(id) , message)
+        
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton('اضافه کردن شماره' , callback_data='add_account') ,
@@ -102,16 +134,18 @@ async def get_vervication_code(update: Update, context: ContextTypes.DEFAULT_TYP
     return VERFIVATION_CODE
 
 async def finsh_add_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int :
+    back_keybord = [[InlineKeyboardButton('بازگشت به منوی اصلی' , callback_data='back')]]
+    back_reply_markup = InlineKeyboardMarkup(back_keybord)
     code = update.message.text
     code = code.replace('_' , '')
     try :
         await client.sign_in(add_account_data[0], code=code , phone_code_hash=add_account_data[5])
     except SessionPasswordNeededError :
         await client.sign_in(password=add_account_data[4] , phone_code_hash=add_account_data[5])
-    await update.message.reply_text('اکانت با موفقیت اضافه شد')
+    await update.message.reply_text('اکانت با موفقیت اضافه شد' , reply_markup=back_reply_markup)
     with open('acoounts.json' , 'r') as account_file :
         accounts = json.load(account_file)
-    accounts[add_account_data[0]] = [add_account_data[1]]
+    accounts[add_account_data[0]] = [add_account_data[1] , add_account_data[2] , add_account_data[3]]
     with open('acoounts.json' , 'w') as account_file_2 :
         json.dump(accounts , account_file_2)
     add_account_data.clear()
@@ -123,8 +157,9 @@ async def show_accounts(query):
     account_keybord = []
     for k, v in accounts.items():
         account_keybord.append([InlineKeyboardButton(text=k , callback_data=k)])
-        account_reply_markup = InlineKeyboardMarkup(account_keybord)
-        await query.message.reply_text('اکانت های شما :‌ ' , reply_markup=account_reply_markup)
+    account_keybord.append([InlineKeyboardButton('بازگشت به منوی اصلی' , callback_data='back')])
+    account_reply_markup = InlineKeyboardMarkup(account_keybord)
+    await query.message.reply_text('اکانت های شما :‌ ' , reply_markup=account_reply_markup)
 
 async def delete_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     cancel_keybord = [[InlineKeyboardButton('کنسل' , callback_data='cancel')]]
@@ -214,7 +249,7 @@ async def edit_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     cancel_keybord = [[InlineKeyboardButton('کنسل' , callback_data='cancel')]]
     global cancel_reply_markup
     cancel_reply_markup = InlineKeyboardMarkup(cancel_keybord)
-    await update.message.reply_text('چه چیزی را می خواهید تغیر بدید :\n[message - pattertn format]')
+    await update.message.reply_text('چه چیزی را می خواهید تغیر بدید :\n[message - pattertn format]' , reply_markup=cancel_reply_markup)
     return TOPIC_TO_CHANGE
 
 async def get_topic_to_change(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int :
@@ -224,9 +259,9 @@ async def get_topic_to_change(update: Update, context: ContextTypes.DEFAULT_TYPE
     global topic_to_change
     topic_to_change = update.message.text
     if topic_to_change == 'message' :
-        await update.message.reply_text('پیام جدید رو بفرستید')
+        await update.message.reply_text('پیام جدید رو بفرستید' , reply_markup=cancel_reply_markup)
     elif topic_to_change == 'pattertn format' :
-        await update.message.reply_text('لطفا فرمت جدید رو به این صورت برام بفرست :\n2\n9-13-18-21')
+        await update.message.reply_text('لطفا فرمت جدید رو به این صورت برام بفرست :\n2\n9-13-18-21' , reply_markup=cancel_reply_markup)
     else : 
         await update.message.reply_text('مضوعی که می خواهید تغیر کند را به درستی وارد نکردید.' , reply_markup=back_account_keybord_markup)
         return ConversationHandler.END
@@ -280,8 +315,6 @@ async def main_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     account_keybord = [[InlineKeyboardButton('دیدن اطلاعات اکانت' , callback_data='see_account_detail')],
                         [InlineKeyboardButton('ست کردن فرمت' , callback_data='set_pattern') , 
                         InlineKeyboardButton('تغیر فرمت' , callback_data='change_pattern')] ,
-                        [InlineKeyboardButton('فعال کردن فرستادن پیام به دایرکت' , callback_data='acrive_send_message_to_dm'),
-                        InlineKeyboardButton('غیر فغال کردن فرستادن پیام به دایرکت' , callback_data="diactive_send_message_to_dm")],
                         [InlineKeyboardButton('فعال کردن اکانت' , callback_data='active_account'),
                         InlineKeyboardButton('غیرفعال کردن اکانت' , callback_data='diactive_account')],
                         [InlineKeyboardButton('بازگشت به منوی اصلی' , callback_data='back')]]
@@ -316,19 +349,32 @@ async def main_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text('چه کاری میخواید رو اکانت بدید : ' , reply_markup=account_keybord_markup)
     elif data == 'see_account_detail' :
         account_data = accounts[selected_phone]
-        if len(account_data) == 1 :
+        if len(account_data) == 3 :
             await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده :‌ فرمتی ست نشده', reply_markup=back_account_keybord_markup)
-        elif len(account_data) == 3 :
-            await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده : {account_data[1]}\nپیام ست شده برای فرمت: {account_data[2]}', reply_markup=back_account_keybord_markup)
-        elif len(account_data) == 4 :
-            await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده : {account_data[1]}\nساعت فرستادن پیام: {account_data[2]}\nپیام ست شده برای فرمت :{account_data[3]}', reply_markup=back_account_keybord_markup)
+        elif len(account_data) == 5 :
+            await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده : {account_data[3]}\nپیام ست شده برای فرمت: {account_data[4]}', reply_markup=back_account_keybord_markup)
+        elif len(account_data) == 6 :
+            await query.message.reply_text(f'اسم اکانت :{account_data[0]}\nفرمت ست شده : {account_data[3]}\nساعت فرستادن پیام: {account_data[4]}\nپیام ست شده برای فرمت :{account_data[5]}', reply_markup=back_account_keybord_markup)
     elif data == 'active_account' :
         loop = asyncio.get_event_loop()
-        client_1 = TelegramClient(f'session_files/{accounts[selected_phone][0]}')
-        client_1.connect()
-        for dialog in client.get_dialogs():
-            if dialog.is_group == True:
-                print(dialog.entity.id)
+        groups_id[selected_phone] = []
+        task = loop.create_task(send_message_to_group(selected_phone))
+        task_name = task.get_name()
+        with open('tasks.json' , 'r') as task_file :
+            tasks = json.load(task_file)
+        tasks[selected_phone] = task_name
+        with open('tasks.json' , 'w') as task_file_1 :
+            json.dump(tasks , task_file_1)
+        await query.message.reply_text('ربات در حال فرستادن پیام داخل گروه ها هست' , reply_markup=back_account_keybord_markup)
+    elif data == 'diactive_account' :
+        with open('tasks.json' , 'r') as task_file :
+            tasks = json.load(task_file)
+        task_name = tasks[selected_phone]
+        for t in asyncio.all_tasks():
+            if t.get_name() == task_name:
+                t.cancel()
+        await query.message.reply_text('فرایند لغو شد.')
+
 
 def main() -> None:
     application = Application.builder().token(os.getenv('BOT_TOKEN')).build()
@@ -348,7 +394,7 @@ def main() -> None:
             USER_NAME : [MessageHandler(filters.TEXT & ~ filters.COMMAND , get_phone_number)] ,
             API_HASH : [MessageHandler(filters.TEXT & ~ filters.COMMAND , get_api_hash)] ,
             API_ID : [MessageHandler(filters.TEXT & ~ filters.COMMAND, get_api_id)] ,
-            PASSWORLD : [MessageHandler(filters.TEXT & ~ filters.COMMAND , get_vervication_code) ,
+            PASSWORLD : [MessageHandler(filters.TEXT , get_vervication_code) ,
                          CommandHandler('skip' , skip_password)] ,
             VERFIVATION_CODE : [MessageHandler(filters.TEXT & ~ filters.COMMAND , finsh_add_account)]
         } , 
